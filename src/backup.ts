@@ -25,13 +25,16 @@ const uploadToS3 = async ({ name, path }: { name: string, path: string }) => {
   }
 
   if (env.BUCKET_SUBFOLDER) {
-    name = env.BUCKET_SUBFOLDER + "/" + name;
+    const sanitizedSubfolder = env.BUCKET_SUBFOLDER.replace(/[^a-zA-Z0-9._/-]/g, '-').replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
+    name = sanitizedSubfolder + "/" + name;
   }
 
   let params: PutObjectCommandInput = {
     Bucket: bucket,
     Key: name,
     Body: createReadStream(path),
+    ContentType: 'application/gzip',
+    ContentEncoding: 'gzip',
   }
 
   const client = new S3Client(clientOptions);
@@ -39,6 +42,7 @@ const uploadToS3 = async ({ name, path }: { name: string, path: string }) => {
   await new Upload({
     client,
     params: params,
+    partSize: 1024 * 1024 * 10, // 10 MB parts
   }).done();
 
   console.log("Backup uploaded to S3...");
@@ -96,8 +100,9 @@ export const backup = async () => {
   console.log("Initiating DB backup...");
 
   const date = new Date().toISOString();
-  const timestamp = date.replace(/[:.]+/g, '-');
-  const filename = `${env.BACKUP_FILE_PREFIX}-${timestamp}.tar.gz`;
+  const timestamp = date.replace(/[^a-zA-Z0-9]/g, '-');
+  const sanitizedPrefix = env.BACKUP_FILE_PREFIX.replace(/[^a-zA-Z0-9._-]/g, '-');
+  const filename = `${sanitizedPrefix}-${timestamp}.tar.gz`;
   const filepath = path.join(os.tmpdir(), filename);
 
   await dumpToFile(filepath);
